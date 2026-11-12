@@ -1,41 +1,42 @@
-"""Rates exp 4: FOMC-date event response, US 10y futures direction after scheduled window.
-Mechanism: rate decisions and projections prompt same-day Treasury repricing and
-information-driven continuation.
-Calendar approximation: all regular FOMC decisions historically occurred Wednesday,
-so test Wednesdays with prior-3-session return as event-direction proxy.
-Falsifier: stressed PnL <=0 or any era block <=0.
+"""v18n-2 experiment 3.
+FAMILY: gold_us_morning_range_breakout
+Mechanism: GC range built 17:00-08:30 CT (Asia+London) holds resting stops; a COMEX-session
+close beyond it triggers stop-run/CTA momentum that continues through the US morning.
+Hypothesis: first completed 1m close beyond overnight range at/after 08:30 CT, one trade/session,
+fixed $250 stop, flat 13:00 CT. GC only, 1 contract.
+Falsification: <70% positive years, any negative era, or fold pass rates ~0.
 """
 import numpy as np
-import pandas as pd
 
-FAMILY = "rates-fomc-event-response"
-PARAMS = {"lookback_sessions": 3, "entry_ct_sec": 43200, "exit_ct_sec": 50400, "risk_dollars": 250}
-
-
-def entry_risk(panel):
-    return {s: np.full(len(df), PARAMS["risk_dollars"], dtype=float) for s, df in panel.items()}
+FAMILY = "gold_us_morning_range_breakout"
+PARAMS = {"entry_sec": 30600, "exit_sec": 46800, "stop_ticks": 25}
+GC_TICK, GC_PV = 0.1, 100.0
+RISK = PARAMS["stop_ticks"] * GC_TICK * GC_PV  # $250/contract
 
 
 def signals(panel):
-    result = {}
-    for symbol, df in panel.items():
+    res = {}
+    for sym, df in panel.items():
         out = np.zeros(len(df), dtype=np.int64)
-        if symbol != "ZN":
-            result[symbol] = out
-            continue
-        closes = df.close.to_numpy()
-        sec = df.ct_sec.to_numpy()
-        groups = list(df.groupby("session", sort=False).indices.values())
-        dates = pd.Series([str(x)[:10] for x in df.session.iloc[[g[0] for g in groups]].to_numpy()], dtype='datetime64[ns]')
-        wed = (dates.dt.weekday == 2).to_numpy()
-        for g in range(PARAMS["lookback_sessions"], len(groups)):
-            if not wed[g]:
-                continue
-            prev = groups[g - 1]
-            back = groups[g - PARAMS["lookback_sessions"]]
-            side = int(np.sign(closes[prev[-1]] - closes[back[-1]]))
-            idx = groups[g]
-            active = idx[(sec[idx] >= PARAMS["entry_ct_sec"]) & (sec[idx] < PARAMS["exit_ct_sec"])]
-            out[active] = side
-        result[symbol] = out
-    return result
+        if sym == "GC":
+            c, h, l, s = (df[k].to_numpy() for k in ("close", "high", "low", "ct_sec"))
+            stop = PARAMS["stop_ticks"] * GC_TICK
+            for idx in df.groupby("session", sort=False).indices.values():
+                hi, lo, pos, ref, done = -np.inf, np.inf, 0, 0.0, False
+                for i in idx:
+                    t = s[i]
+                    if t < PARAMS["entry_sec"]:
+                        hi, lo = max(hi, h[i]), min(lo, l[i])
+                    elif t < PARAMS["exit_sec"] and not done:
+                        if pos == 0 and np.isfinite(hi):
+                            pos = 1 if c[i] > hi else (-1 if c[i] < lo else 0)
+                            ref = c[i]
+                        elif pos and pos * (c[i] - ref) <= -stop:
+                            pos, done = 0, True
+                        out[i] = pos
+        res[sym] = out
+    return res
+
+
+def entry_risk(panel):
+    return {s: np.full(len(d), RISK if s == "GC" else 0.0) for s, d in panel.items()}
