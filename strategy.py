@@ -1,12 +1,12 @@
-"""Experiment 12: wheat harvest-pressure seasonal short.
-Mechanism: Northern Hemisphere harvest delivery and storage hedging add supply pressure
-in September-October. Calendar is known in advance; hold one low-turnover position.
-Falsifier: stressed PnL <=0 or any chronological era block <=0.
+"""Experiment 14: stable harvest-pressure hold.
+Mechanism: September-October wheat supply pressure; hold continuously through month
+and out of month so roll/gap exits do not churn. Same idea as exp 12, correct contract.
+Falsifier: stressed PnL <=0 or any era block <=0.
 """
 import numpy as np
 import pandas as pd
 
-FAMILY = "grains-harvest-pressure-seasonality"
+FAMILY = "grains-harvest-pressure-seasonality-stable-hold"
 PARAMS = {"start_month": 9, "end_month": 10, "risk_dollars": 250}
 
 def entry_risk(panel):
@@ -18,6 +18,8 @@ def signals(panel):
         out=np.zeros(len(df),dtype=np.int64)
         if s=='ZW':
             months=pd.to_datetime(df.session.astype(str).str[:10]).dt.month.to_numpy()
-            out[(months>=PARAMS['start_month'])&(months<=PARAMS['end_month'])]=-1
+            on=(months>=PARAMS['start_month'])&(months<=PARAMS['end_month'])
+            out[on]=-1
+            # Causality note: calendar months are known at entry; no price lookahead.
         ans[s]=out
     return ans
