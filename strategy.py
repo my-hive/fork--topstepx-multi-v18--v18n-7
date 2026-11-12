@@ -1,13 +1,15 @@
-"""Rates exp 2: month-end index duration-extension demand, long ZN afternoons.
-Mechanism: bond indices extend duration at month end; passive buying concentrates
-into the last sessions, after cash open. Calendar-only signal (no price lookahead).
-Falsifier: stressed PnL <=0 or any era block <=0 on ZN last-3-business-day longs.
+"""Rates exp 4: FOMC-date event response, US 10y futures direction after scheduled window.
+Mechanism: rate decisions and projections prompt same-day Treasury repricing and
+information-driven continuation.
+Calendar approximation: all regular FOMC decisions historically occurred Wednesday,
+so test Wednesdays with prior-3-session return as event-direction proxy.
+Falsifier: stressed PnL <=0 or any era block <=0.
 """
 import numpy as np
 import pandas as pd
 
-FAMILY = "rates-month-end-duration-extension"
-PARAMS = {"last_n_bdays": 3, "entry_ct_sec": 36000, "risk_dollars": 250}
+FAMILY = "rates-fomc-event-response"
+PARAMS = {"lookback_sessions": 3, "entry_ct_sec": 43200, "exit_ct_sec": 50400, "risk_dollars": 250}
 
 
 def entry_risk(panel):
@@ -21,13 +23,19 @@ def signals(panel):
         if symbol != "ZN":
             result[symbol] = out
             continue
-        dates = pd.to_datetime(df.session.astype(str).str[:10])
-        # business days remaining to month end (calendar known in advance)
-        uniq = pd.DataFrame({"d": dates.drop_duplicates()})
-        uniq["left"] = [np.busday_count(d.date(), (d + pd.offsets.BMonthEnd(0)).date()) for d in uniq.d]
-        lm = dict(zip(uniq.d, uniq.left))
-        left = dates.map(lm).to_numpy()
-        on = (left < PARAMS["last_n_bdays"]) & (df.ct_sec.to_numpy() >= PARAMS["entry_ct_sec"])
-        out[on] = 1
+        closes = df.close.to_numpy()
+        sec = df.ct_sec.to_numpy()
+        groups = list(df.groupby("session", sort=False).indices.values())
+        dates = pd.Series([str(x)[:10] for x in df.session.iloc[[g[0] for g in groups]].to_numpy()], dtype='datetime64[ns]')
+        wed = (dates.dt.weekday == 2).to_numpy()
+        for g in range(PARAMS["lookback_sessions"], len(groups)):
+            if not wed[g]:
+                continue
+            prev = groups[g - 1]
+            back = groups[g - PARAMS["lookback_sessions"]]
+            side = int(np.sign(closes[prev[-1]] - closes[back[-1]]))
+            idx = groups[g]
+            active = idx[(sec[idx] >= PARAMS["entry_ct_sec"]) & (sec[idx] < PARAMS["exit_ct_sec"])]
+            out[active] = side
         result[symbol] = out
     return result
