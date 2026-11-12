@@ -1,22 +1,24 @@
-"""NQ prior-session RTH return reversal (overreaction of last day's index move), 1 contract."""
+"""v17n-1 exp5. Mechanism: refinery utilization and gasoline demand create a daily
+crack-spread inventory-balance signal. When prior session RB outperforms CL, RB continuation
+at 09:00 CT captures persistent product tightness. Falsification: stressed PnL/era/year checks.
+"""
 import numpy as np
-import pandas as pd
-FAMILY = "index-prior-day-reversal"
-PARAMS = {"rth_start": 30600, "rth_end": 53400, "entry_sec": 34200, "exit_sec": 53000, "risk_points": 14, "vol_lookback": 20}
-def signals(panel):
-    result={}
-    for s,d in panel.items():
-        out=np.zeros(len(d),dtype=np.int64)
-        if s!='NQ': result[s]=out; continue
-        sec=d.ct_sec.to_numpy(); sess=d.session.astype(str)
-        rth=(sec>=PARAMS['rth_start'])&(sec<PARAMS['rth_end'])
-        g=d[rth].groupby(sess[rth])
-        ret=g.close.last()-g.open.first()
-        prior_range=(g.high.max()-g.low.min())
-        high_vol=prior_range.shift(1) > prior_range.shift(1).rolling(PARAMS['vol_lookback']).median()
-        side=-np.sign(ret).shift(1)*high_vol  # prior session return; prior-only volatility gate
-        m=sess.map(pd.Series(side.to_numpy(),index=ret.index.astype(str))).fillna(0).to_numpy()
-        a=(sec>=PARAMS['entry_sec'])&(sec<PARAMS['exit_sec'])
-        out[a]=m[a].astype(np.int64); result[s]=out
-    return result
-def entry_risk(panel): return {s:np.full(len(d),PARAMS['risk_points']*20.0,dtype=float) for s,d in panel.items()}
+FAMILY = "energy-prior-session-crack-spread-continuation"
+PARAMS = {"entry_ct_sec": 32400, "hold_minutes": 120, "stop_dollars": 280}
+FLAT=15*3600+9*60
+
+def _run(p):
+ sig={s:np.zeros(len(d),dtype=np.int64) for s,d in p.items()}; risk={s:np.zeros(len(d)) for s,d in p.items()}
+ rb,cl=p['RB'],p['CL']; sec=rb.ct_sec.to_numpy(); c=rb.close.to_numpy(); sess=rb.session.astype(str).to_numpy()
+ rbclose=rb.close.groupby(sess).last(); clclose=cl.close.reindex(rb.index).groupby(sess).last(); spread=np.log(rbclose).diff()-np.log(clclose).diff()
+ groups=list(rb.groupby(sess,sort=False).indices.values())
+ for k in range(1,len(groups)):
+  v=spread.iloc[k-1]; side=0 if np.isnan(v) else int(np.sign(v)); ix=np.asarray(groups[k]); hit=ix[sec[ix]==PARAMS['entry_ct_sec']]
+  if not side or not len(hit): continue
+  e=hit[0]; stop=PARAMS['stop_dollars']/42000
+  for j in range(e,min(e+PARAMS['hold_minutes']+1,ix[-1]+1)):
+   if sec[j]>=FLAT or (j>e and side*(c[j]-c[e])<=-stop): break
+   sig['RB'][j]=side; risk['RB'][j]=PARAMS['stop_dollars']
+ return sig,risk
+def signals(panel): return _run(panel)[0]
+def entry_risk(panel): return _run(panel)[1]
