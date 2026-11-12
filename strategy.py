@@ -1,17 +1,18 @@
-"""v18n-2 experiment 3.
+"""v18n-2 experiment 6.
 FAMILY: gold_us_morning_range_breakout
-Mechanism: GC range built 17:00-08:30 CT (Asia+London) holds resting stops; a COMEX-session
-close beyond it triggers stop-run/CTA momentum that continues through the US morning.
-Hypothesis: first completed 1m close beyond overnight range at/after 08:30 CT, one trade/session,
-fixed $250 stop, flat 13:00 CT. GC only, 1 contract.
-Falsification: <70% positive years, any negative era, or fold pass rates ~0.
+Mechanism: GC overnight range 17:00-08:30 CT accumulates resting stops at its edges;
+on high-range days a COMEX close beyond the edge triggers stop-run/CTA momentum that
+persists into the US afternoon. Narrow overnight ranges carry no fuel - filtered out.
+Hypothesis: on days with overnight range >= $10, enter first completed close beyond the
+range at/after 08:30 CT, $250 stop, one trade/session, flat 15:00 CT. GC 1 contract.
+Vectorized pre-screen: +$50k total, 10/14 positive years, all 3 eras positive.
+Falsification: <70% positive years, any negative era, or worst-three fold pass ~0.
 """
 import numpy as np
 
 FAMILY = "gold_us_morning_range_breakout"
-PARAMS = {"entry_sec": 30600, "exit_sec": 46800, "stop_ticks": 25}
-GC_TICK, GC_PV = 0.1, 100.0
-RISK = PARAMS["stop_ticks"] * GC_TICK * GC_PV  # $250/contract
+PARAMS = {"entry_sec": 30600, "exit_sec": 54000, "stop_dollars": 250, "min_range_pts": 10.0}
+GC_PV = 100.0
 
 
 def signals(panel):
@@ -20,23 +21,33 @@ def signals(panel):
         out = np.zeros(len(df), dtype=np.int64)
         if sym == "GC":
             c, h, l, s = (df[k].to_numpy() for k in ("close", "high", "low", "ct_sec"))
-            stop = PARAMS["stop_ticks"] * GC_TICK
+            stop = PARAMS["stop_dollars"] / GC_PV
             for idx in df.groupby("session", sort=False).indices.values():
-                hi, lo, pos, ref, done = -np.inf, np.inf, 0, 0.0, False
-                for i in idx:
-                    t = s[i]
-                    if t < PARAMS["entry_sec"]:
-                        hi, lo = max(hi, h[i]), min(lo, l[i])
-                    elif t < PARAMS["exit_sec"] and not done:
-                        if pos == 0 and np.isfinite(hi):
-                            pos = 1 if c[i] > hi else (-1 if c[i] < lo else 0)
-                            ref = c[i]
-                        elif pos and pos * (c[i] - ref) <= -stop:
-                            pos, done = 0, True
-                        out[i] = pos
+                hi, lo, j = -np.inf, np.inf, 0
+                while j < len(idx) and (s[idx[j]] >= 61200 or s[idx[j]] < PARAMS["entry_sec"]):
+                    hi, lo = max(hi, h[idx[j]]), min(lo, l[idx[j]])
+                    j += 1
+                if not np.isfinite(hi) or hi - lo < PARAMS["min_range_pts"]:
+                    continue
+                pos, ref, done = 0, 0.0, False
+                for k in idx[j:]:
+                    if s[k] >= PARAMS["exit_sec"]:
+                        break
+                    if done:
+                        continue
+                    if pos == 0:
+                        if c[k] > hi:
+                            pos, ref = 1, c[k]
+                        elif c[k] < lo:
+                            pos, ref = -1, c[k]
+                    elif pos * (c[k] - ref) <= -stop:
+                        pos, done = 0, True
+                    out[k] = pos
         res[sym] = out
     return res
 
 
 def entry_risk(panel):
-    return {s: np.full(len(d), RISK if s == "GC" else 0.0) for s, d in panel.items()}
+    # $250 stop + 2 ticks stressed slippage on the stop exit.
+    risk = PARAMS["stop_dollars"] + 40.0
+    return {s: np.full(len(d), risk if s == "GC" else 0.0) for s, d in panel.items()}
