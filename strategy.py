@@ -1,19 +1,16 @@
-"""Experiment 26: copper Asian-to-US industrial-demand handoff.
-Mechanism: Asian industrial price discovery transmits to COMEX when US liquidity opens.
-Observe 18:00-08:20 CT, trade 08:30-10:30. Falsifier: nonpositive PnL/era.
+"""Experiment 25: soybean planting-weather risk premium.
+Mechanism: Apr-May planting weather uncertainty raises soybean risk premium. Known
+seasonal calendar, low turnover. Falsifier: nonpositive stressed PnL or any era <=0.
 """
-import numpy as np
-FAMILY='metals-copper-asia-us-handoff'
-PARAMS={'observe_ct_sec':64800,'entry_ct_sec':30600,'exit_ct_sec':37800,'risk_dollars':250}
-def entry_risk(p):return{s:np.full(len(d),250.,dtype=float)for s,d in p.items()}
-def signals(p):
- a={}
- for s,d in p.items():
+import numpy as np,pandas as pd
+FAMILY='grains-planting-weather-risk-premium'
+PARAMS={'start_month':4,'end_month':5,'risk_dollars':250}
+def entry_risk(panel):return{s:np.full(len(d),PARAMS['risk_dollars'],dtype=float)for s,d in panel.items()}
+def signals(panel):
+ ans={}
+ for s,d in panel.items():
   o=np.zeros(len(d),dtype=np.int64)
-  if s=='HG':
-   c,t=d.close.to_numpy(),d.ct_sec.to_numpy()
-   for g in d.groupby('session',sort=False).indices.values():
-    x=g[t[g]==64800];y=g[t[g]==30600]
-    if len(x)and len(y):o[g[(t[g]>=30600)&(t[g]<37800)]]=int(np.sign(c[y[0]]-c[x[0]]))
-  a[s]=o
- return a
+  if s=='ZS':
+   m=pd.to_datetime(d.session.astype(str).str[:10]).dt.month.to_numpy();o[(m>=4)&(m<=5)]=1
+  ans[s]=o
+ return ans
