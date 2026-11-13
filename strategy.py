@@ -1,20 +1,16 @@
-"""Experiment 69: micro natural-gas storage-day continuation.
-Mechanism: weekly storage surprise is information shock; first 30-minute repricing
-continues while utilities and producers update hedges. Use MNG to lower cost burden.
-Falsifier: stressed PnL <=0 or any chronological era PnL <=0.
+"""Experiment 71: soybean-oil biodiesel demand seasonality.
+Mechanism: summer driving/biodiesel blending demand supports soybean oil during May-Aug.
+Known seasonal calendar, low turnover. Falsifier: stressed PnL <=0 or any era PnL <=0.
 """
 import numpy as np,pandas as pd
-FAMILY='energy-micro-gas-storage-shock-continuation'
-PARAMS={'open_ct_sec':30600,'entry_ct_sec':32400,'exit_ct_sec':39600,'risk_dollars':250}
+FAMILY='grains-soy-oil-biodiesel-seasonality'
+PARAMS={'start_month':5,'end_month':8,'risk_dollars':250}
 def entry_risk(p):return{s:np.full(len(d),250.,dtype=float)for s,d in p.items()}
 def signals(p):
  a={}
  for s,d in p.items():
   o=np.zeros(len(d),dtype=np.int64)
-  if s=='MNG':
-   c,t=d.close.to_numpy(),d.ct_sec.to_numpy();wd=pd.to_datetime(d.session.astype(str).str[:10]).dt.weekday.to_numpy()
-   for g in d.groupby('session',sort=False).indices.values():
-    x=g[t[g]==30600];y=g[t[g]==32400]
-    if len(x)and len(y)and wd[g[0]]==3:o[g[(t[g]>=32400)&(t[g]<39600)]]=int(np.sign(c[y[0]]-c[x[0]]))
+  if s=='ZL':
+   m=pd.to_datetime(d.session.astype(str).str[:10]).dt.month.to_numpy();o[(m>=5)&(m<=8)]=1
   a[s]=o
  return a
