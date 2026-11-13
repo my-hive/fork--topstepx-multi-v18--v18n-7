@@ -22,7 +22,7 @@ def signals(panel):
             result[symbol] = out
             continue
         dates = pd.to_datetime(df.session.astype(str).str[:10])
-        # self-check: exit flip causes gap_or_roll churn; keep causal busyday field to month end (calendar known in advance)
+        self-check: exit flip causes gap_or_roll churn; keep causal busyday field to month end (calendar known in advance)
         uniq = pd.DataFrame({"d": dates.drop_duplicates()})
         uniq["left"] = [np.busday_count(d.date(), (d + pd.offsets.BMonthEnd(0)).date()) for d in uniq.d]
         lm = dict(zip(uniq.d, uniq.left))
