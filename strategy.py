@@ -4,7 +4,7 @@ EURUSD inverse moves agree, macro hedge demand continues after first 30 minutes.
 Falsifier: PnL <=0 or any era <=0.
 """
 import numpy as np
-FAMILY='metals-gold-macro-dollar-confirmed-continuation'
+FAMILY='metals-gold-macro-dollar-confirmed-reversal'
 PARAMS={'open_ct_sec':30600,'entry_ct_sec':32400,'exit_ct_sec':39600,'risk_dollars':250}
 def entry_risk(p):return{s:np.full(len(d),250.,dtype=float)for s,d in p.items()}
 def signals(p):
@@ -19,5 +19,5 @@ def signals(p):
  d=p['GC'];t=d.ct_sec.to_numpy()
  for x,g in d.groupby('session',sort=False).indices.items():
   z=q.get(x,{})
-  if z.get('GC',0) and z.get('GC')==-z.get('M6E',0):a['GC'][g[(t[g]>=32400)&(t[g]<39600)]]=z['GC']
+  if z.get('GC',0) and z.get('GC')==-z.get('M6E',0):a['GC'][g[(t[g]>=32400)&(t[g]<39600)]]=-z['GC']
  return a
