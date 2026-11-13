@@ -4,7 +4,7 @@ cash stock liquidity normalizes, temporary flight-to-quality flow in TN retraces
 Falsifier: stressed PnL <=0 or any era PnL <=0.
 """
 import numpy as np
-FAMILY='cross-asset-equity-ultrabond-opening-safehaven-reversal'
+FAMILY='cross-asset-equity-ultrabond-opening-safehaven-continuation'
 PARAMS={'open_ct_sec':30600,'entry_ct_sec':32400,'exit_ct_sec':39600,'risk_dollars':250}
 def entry_risk(p):return{s:np.full(len(d),250.,dtype=float)for s,d in p.items()}
 def signals(p):
@@ -16,5 +16,5 @@ def signals(p):
   if len(x)and len(y):sig[sess]=-int(np.sign(c[y[0]]-c[x[0]]))
  d=p['TN'];t=d.ct_sec.to_numpy()
  for sess,g in d.groupby('session',sort=False).indices.items():
-  if sig.get(sess,0):a['TN'][g[(t[g]>=32400)&(t[g]<39600)]]=-sig[sess]
+  if sig.get(sess,0):a['TN'][g[(t[g]>=32400)&(t[g]<39600)]]=sig[sess]
  return a
