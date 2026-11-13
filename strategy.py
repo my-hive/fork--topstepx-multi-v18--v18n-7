@@ -1,36 +1,43 @@
-"""v18n-2 experiment 19. Independent metals statistical family:
-FAMILY: gold_week_of_month_long
-Mechanism: ex-ante monthly settlement/index-flow patterns may cluster by week number;
-weeks 2 and 3 are selected as mid-month positioning/risk-on windows, not fitted thresholds.
-Hypothesis: long 1 GC contract from 17:00 CT session open through 15:00 CT on session days
-falling in calendar weeks 2-3, $250 stop. Falsification: negative stressed PnL/era.
+"""v18n-2 experiment 31. Independent metals family.
+FAMILY: metals_thursday_loss_friday_rebound
+Mechanism: after a down Thursday, pre-weekend risk reduction and short covering should be
+strongest in Friday's metals session; the effect is only used after a completed weak day.
+Hypothesis: if prior completed session return is negative and next session is Friday, go
+long GC/SI/HG from first 17:00 CT bar through 15:00 CT, $250 stop. No fitted thresholds.
+Falsification: stressed PnL/any era negative or year fraction <70%.
 """
 import numpy as np
 import pandas as pd
 
-FAMILY = "gold_week_of_month_long"
-PARAMS = {"weeks": [2, 3], "stop_dollars": 250, "exit_sec": 54000}
-GC_PV = 100.0
+FAMILY = "metals_thursday_loss_friday_rebound"
+PARAMS = {"stop_dollars": 250}
+PV = {"GC": 100.0, "SI": 5000.0, "HG": 25000.0}
+
+
+def _plan(df, pv):
+    out = np.zeros(len(df), dtype=np.int64)
+    close, sec = df.close.to_numpy(), df.ct_sec.to_numpy()
+    prior, weak = None, False
+    for idx in df.groupby("session", sort=False).indices.values():
+        day = pd.Timestamp(df.session.iloc[idx[0]]).dayofweek
+        bars = [i for i in idx if 61200 <= sec[i] < 61500] + [i for i in idx if 30600 <= sec[i] < 54000]
+        if weak and day == 4 and len(bars) > 1:
+            ref = close[bars[0]]
+            for i in bars[1:]:
+                if close[i] - ref <= -PARAMS["stop_dollars"] / pv:
+                    break
+                out[i] = 1
+        end = [i for i in idx if 53400 <= sec[i] <= 54000]
+        if end:
+            px = close[end[-1]]
+            weak = prior is not None and px < prior
+            prior = px
+    return out
 
 
 def signals(panel):
-    ans = {}
-    for sym, df in panel.items():
-        out = np.zeros(len(df), dtype=np.int64)
-        if sym == "GC":
-            close, sec = df.close.to_numpy(), df.ct_sec.to_numpy()
-            week = (((pd.to_datetime(df.session).day - 1) // 7) + 1).to_numpy()
-            for idx in df.groupby("session", sort=False).indices.values():
-                if week[idx[0]] not in PARAMS["weeks"]:
-                    continue
-                ref = close[idx[0]]
-                for i in idx[1:]:
-                    if 54000 <= sec[i] < 61200 or close[i] - ref <= -PARAMS["stop_dollars"] / GC_PV:
-                        break
-                    out[i] = 1
-        ans[sym] = out
-    return ans
+    return {s: (_plan(d, PV[s]) if s in PV else np.zeros(len(d), dtype=np.int64)) for s, d in panel.items()}
 
 
 def entry_risk(panel):
-    return {s: np.full(len(d), 290.0 if s == "GC" else 0.0) for s, d in panel.items()}
+    return {s: np.full(len(d), 290.0 if s in PV else 0.0) for s, d in panel.items()}
