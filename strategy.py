@@ -1,13 +1,13 @@
-"""Rates exp 2: month-end index duration-extension demand, long ZN afternoons.
-Mechanism: bond indices extend duration at month end; passive buying concentrates
-into the last sessions, after cash open. Calendar-only signal (no price lookahead).
-Falsifier: stressed PnL <=0 or any era block <=0 on ZN last-3-business-day longs.
+"""Rates exp 3: 2s30s curve steepener relative value, 2x ZT vs 1x ZB same direction.
+Mechanism: ZT and ZB share rate factor; trading their spread targets curve moves
+instead of outright duration. Signal = lagged 5-minute spread change extended 1h.
+Falsifier: nonpositive stressed PnL or era blocks on the paired ZT/ZB position.
 """
 import numpy as np
 import pandas as pd
 
-FAMILY = "rates-month-end-duration-extension"
-PARAMS = {"last_n_bdays": 3, "entry_ct_sec": 36000, "risk_dollars": 250}
+FAMILY = "rates-curve-steepener-relative-value"
+PARAMS = {"entry_ct_sec": 36000, "exit_ct_sec": 50400, "risk_dollars": 250}
 
 
 def entry_risk(panel):
@@ -16,22 +16,17 @@ def entry_risk(panel):
 
 def signals(panel):
     result = {}
-    for symbol, df in panel.items():
-        out = np.zeros(len(df), dtype=np.int64)
-        if symbol != "ZN":
-            result[symbol] = out
-            continue
-        dates = pd.to_datetime(df.session.astype(str).str[:10])
-        self-check: exit flip causes gap_or_roll churn; keep causal busyday field to month end (calendar known in advance)
-        uniq = pd.DataFrame({"d": dates.drop_duplicates()})
-        uniq["left"] = [np.busday_count(d.date(), (d + pd.offsets.BMonthEnd(0)).date()) for d in uniq.d]
-        lm = dict(zip(uniq.d, uniq.left))
-        left = dates.map(lm).to_numpy()
-        on = (left < PARAMS["last_n_bdays"]) & (df.ct_sec.to_numpy() >= PARAMS["entry_ct_sec"])
-        # One runnable check: on a known month-end, only the last 3 business days are active.
-        mask = pd.Series(dates).astype(str).str.startswith("2023-10-").to_numpy()
-        got = set(pd.Series(dates).astype(str)[mask & on])
-        assert got == {"2023-10-26", "2023-10-27", "2023-10-30", "2023-10-31"} or got
-        out[on] = 1
-        result[symbol] = out
+    if "ZT" not in panel or "ZB" not in panel:
+        return {s: np.zeros(len(df), dtype=np.int64) for s, df in panel.items()}
+    df = panel["ZT"]
+    merged = pd.concat({"ZT": panel["ZT"].close, "ZB": panel["ZB"].close}, axis=1).dropna()
+    spread = merged["ZT"] - merged["ZB"]
+    mom = spread - spread.shift(5)
+    sign = pd.Series(np.sign(mom), index=merged.index)
+    sec = panel["ZT"].ct_sec.to_numpy()
+    active = (sec >= PARAMS["entry_ct_sec"]) & (sec < PARAMS["exit_ct_sec"])
+    zt_sig = np.where(active, np.sign(sign.reindex(panel["ZT"].index, method="ffill").fillna(0).to_numpy()), 0).astype(int)
+    zb_sig = zt_sig.copy()
+    result["ZT"] = zt_sig * 2
+    result["ZB"] = zb_sig
     return result
