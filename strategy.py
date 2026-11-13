@@ -4,7 +4,7 @@ not idiosyncratic noise; crude hedge demand continues after first half-hour.
 Falsifier: PnL <=0 or any era PnL <=0.
 """
 import numpy as np
-FAMILY='energy-crude-gasoline-crack-opening-confirmation'
+FAMILY='energy-crude-gasoline-crack-opening-divergence-reversion'
 PARAMS={'open_ct_sec':30600,'entry_ct_sec':32400,'exit_ct_sec':39600,'risk_dollars':250}
 def entry_risk(p):return{s:np.full(len(d),250.,dtype=float)for s,d in p.items()}
 def signals(p):
@@ -19,5 +19,5 @@ def signals(p):
  d=p['CL'];t=d.ct_sec.to_numpy()
  for x,g in d.groupby('session',sort=False).indices.items():
   z=q.get(x,{})
-  if z.get('CL',0) and z.get('CL')==z.get('RB',0):a['CL'][g[(t[g]>=32400)&(t[g]<39600)]]=z['CL']
+  if z.get('CL',0) and z.get('CL')==z.get('RB',0):a['CL'][g[(t[g]>=32400)&(t[g]<39600)]]=-z['CL']
  return a
