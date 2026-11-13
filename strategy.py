@@ -1,16 +1,20 @@
-"""Experiment 40: ES quarter-end pension allocation drift.
-Mechanism: institutional allocation and benchmark rebalancing concentrates at quarter-end.
-Long final five observed business sessions of Mar/Jun/Sep/Dec. Falsifier: PnL<=0/era<=0.
+"""Experiment 45: ES monthly options-expiry dealer-unwind reversal.
+Mechanism: third-Friday gamma hedging amplifies pre-open price discovery then unwinds
+as cash liquidity arrives. Fade 08:00-08:30 move on known monthly expiry calendar.
+Falsifier: stressed PnL <=0 or any chronological era PnL <=0.
 """
 import numpy as np,pandas as pd
-FAMILY='index-quarter-end-allocation-drift'
-PARAMS={'final_sessions':5,'risk_dollars':250}
+FAMILY='index-options-expiry-dealer-unwind'
+PARAMS={'observe_ct_sec':28800,'entry_ct_sec':30600,'exit_ct_sec':36000,'risk_dollars':250}
 def entry_risk(p):return{s:np.full(len(d),250.,dtype=float)for s,d in p.items()}
 def signals(p):
  a={}
  for s,d in p.items():
   o=np.zeros(len(d),dtype=np.int64)
   if s=='ES':
-   sess=pd.Series(d.session.astype(str).drop_duplicates()); date=pd.to_datetime(sess.str[:10]); q=date.dt.to_period('Q'); rank=date.groupby(q).cumcount(); n=date.groupby(q).transform('size'); active=((n-rank)<=5)&date.dt.month.isin([3,6,9,12]); lookup=dict(zip(sess,active));o=np.array([int(lookup[x]) for x in d.session.astype(str)],dtype=np.int64)
+   c,t=d.close.to_numpy(),d.ct_sec.to_numpy(); date=pd.to_datetime(d.session.astype(str).str[:10]); expiry=(date.dt.weekday==4)&date.dt.day.between(15,21)
+   for g in d.groupby('session',sort=False).indices.values():
+    x=g[t[g]==28800];y=g[t[g]==30600]
+    if len(x)and len(y)and expiry[g[0]]:o[g[(t[g]>=30600)&(t[g]<36000)]]=-int(np.sign(c[y[0]]-c[x[0]]))
   a[s]=o
  return a
