@@ -1,17 +1,20 @@
-"""Experiment 41: ES quarter-end allocation drift, causal calendar form.
-Mechanism: institutional allocation/rebalancing clusters at quarter-end. Long last five
-calendar business days of March, June, September, December. Calendar date known at entry.
+"""Experiment 42: Treasury macro-surprise overshoot reversal.
+Mechanism: initial 08:30 release liquidity is thin and stop-driven; after 30 minutes,
+rate futures partially retrace while dealers price distribution of data surprise.
 Falsifier: stressed PnL <=0 or any chronological era PnL <=0.
 """
-import numpy as np,pandas as pd
-FAMILY='index-quarter-end-allocation-drift-calendar'
-PARAMS={'business_days_to_quarter_end':5,'risk_dollars':250}
+import numpy as np
+FAMILY='rates-macro-surprise-overshoot-reversal'
+PARAMS={'open_ct_sec':30600,'entry_ct_sec':32400,'exit_ct_sec':36000,'risk_dollars':250}
 def entry_risk(p):return{s:np.full(len(d),250.,dtype=float)for s,d in p.items()}
 def signals(p):
  a={}
  for s,d in p.items():
   o=np.zeros(len(d),dtype=np.int64)
-  if s=='ES':
-   dates=pd.to_datetime(d.session.astype(str).str[:10]); qend=dates+pd.offsets.QuarterEnd(0); left=np.array([np.busday_count(x.date(),y.date()) for x,y in zip(dates,qend)]);o[(left<5)&dates.dt.month.isin([3,6,9,12])]=1
+  if s=='ZN':
+   c,t=d.close.to_numpy(),d.ct_sec.to_numpy()
+   for g in d.groupby('session',sort=False).indices.values():
+    x=g[t[g]==30600];y=g[t[g]==32400]
+    if len(x) and len(y):o[g[(t[g]>=32400)&(t[g]<36000)]]=-int(np.sign(c[y[0]]-c[x[0]]))
   a[s]=o
  return a
