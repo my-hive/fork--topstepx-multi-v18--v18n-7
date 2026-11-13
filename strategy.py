@@ -1,12 +1,12 @@
-"""Friday MES continuation after cross-index-confirmed opening flow.
-Shared MNQ/MES sign identifies basket/ETF institutional imbalance; trade MES liquidity.
-Falsify: stressed PnL/eras/year gates fail or primary is zero.
+"""Risk-scaled Friday MES continuation after cross-index-confirmed opening flow.
+Shared MNQ/MES sign identifies basket/ETF institutional imbalance; 5 MES uses allowed capacity.
+Falsify: primary zero, risk breach, or any era/year gate failure.
 """
 import numpy as np
 import pandas as pd
-FAMILY='equity-friday-opening-cross-index-mes-continuation'
-PARAMS={'entry':32400,'exit':50400,'stop_pts':20.}
-def entry_risk(panel):return {s:np.full(len(d),205.) for s,d in panel.items()}
+FAMILY='equity-friday-opening-cross-index-mes-risk-scaled'
+PARAMS={'size':5,'entry':32400,'exit':50400,'stop_pts':10.}
+def entry_risk(panel):return {s:np.full(len(d),PARAMS['size']*PARAMS['stop_pts']*5+5.) for s,d in panel.items()}
 def signals(panel):
  out={s:np.zeros(len(d),dtype=np.int64) for s,d in panel.items()}
  if not {'MES','MNQ'}<=set(panel):return out
@@ -21,5 +21,5 @@ def signals(panel):
   ref=c[ix[b[0]]]
   for r in ix[b[0]+1:]:
    if t[r]>=PARAMS['exit'] or (c[r]-ref)*side<=-PARAMS['stop_pts']:break
-   out['MES'][r]=side
+   out['MES'][r]=side*PARAMS['size']
  return out
