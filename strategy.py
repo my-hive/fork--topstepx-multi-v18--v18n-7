@@ -1,41 +1,54 @@
-"""v18n-2 experiment 4. Claimed family:
-FAMILY: metals_friday_long
-Mechanism: gold/silver exhibit a Friday-session long premium (GC +12bp/day, t=3.1;
-SI +14.6bp) - plausible short-hedging weekend cover and long-side weekend demand
-flow; scan shows 12/14 (GC) and 11/14 (SI) positive years, all near-zero other weekdays.
-Hypothesis: long GC+SI 1 contract each from Friday-session open (Thu 17:00 CT) to
-15:00 CT Friday, $250/contract hard stop. Falsification: <70% positive years, any
-negative era block, or PnL concentrated in one era.
+"""v18n-2 experiment 2 (exp 1 churned per-minute; logged as failed).
+FAMILY: metals_us_opening_overnight_unwind
+Mechanism: thin Asia/London gold moves are partly liquidity-driven; deep COMEX open liquidity unwinds them.
+Hypothesis: fade completed prior-60min MGC move once at 08:30 CT, hold to 11:00 CT, vol stop, risk-sized.
+Falsification: stressed PnL not positive in all 3 eras or <70% positive years.
 """
 import numpy as np
-import pandas as pd
 
-FAMILY = "metals_friday_long"
-PARAMS = {"stop_dollars": 250, "exit_sec": 54000}
-SPECS = {"GC": (0.1, 100.0), "SI": (0.005, 5000.0)}
+FAMILY = "metals_us_opening_overnight_unwind"
+PARAMS = {"lookback_min": 60, "vol_window": 240, "stop_vol_mult": 1.0, "exit_ct_sec": 39600, "risk_budget": 280}
+SYM = "MGC"
+PV = 10.0
+ENTRY_SEC = 30600  # 08:30 CT
 
 
-def _plan(df, tick, pv):
-    out = np.zeros(len(df), dtype=np.int64)
-    stop = PARAMS["stop_dollars"] / pv
-    c, s = df.close.to_numpy(), df.ct_sec.to_numpy()
+def _plan(df):
+    """Per-row desired target and per-contract risk, causal."""
+    n = len(df)
+    out = np.zeros(n, dtype=np.int64)
+    risk = np.zeros(n)
+    close, sec = df.close.to_numpy(), df.ct_sec.to_numpy()
+    lb, vw = PARAMS["lookback_min"], PARAMS["vol_window"]
     for idx in df.groupby("session", sort=False).indices.values():
-        day = pd.Timestamp(df.session.iloc[idx[0]]).day_of_week
-        if day != 4 or len(idx) < 2:  # Friday sessions only
+        c, s = close[idx], sec[idx]
+        # first bar at/after entry time, if bar present within 5 minutes
+        hits = np.nonzero((s >= ENTRY_SEC) & (s < ENTRY_SEC + 300))[0]
+        if not len(hits) or hits[0] < max(lb, vw):
             continue
-        ref = c[idx[0]]
-        for i in idx[1:]:
-            if s[i] >= PARAMS["exit_sec"] or c[i] - ref <= -stop:
+        j = hits[0]
+        move = c[j] - c[j - lb]
+        r = np.diff(c[j - vw:j + 1])
+        stop = PARAMS["stop_vol_mult"] * r.std() * np.sqrt(lb)
+        per = stop * PV + 2.0  # + slippage buffer
+        n_c = int(min(50, PARAMS["risk_budget"] // per))
+        if move == 0 or n_c < 1 or stop <= 0:
+            continue
+        side = -int(np.sign(move))
+        ref, pos = c[j], 0
+        for k in range(j, len(idx)):
+            if s[k] >= PARAMS["exit_ct_sec"]:
                 break
-            out[i] = 1
-    return out
+            if k > j and side * (c[k] - ref) <= -stop:
+                break
+            out[idx[k]] = side * n_c
+            risk[idx[k]] = per
+    return out, risk
 
 
 def signals(panel):
-    return {s: (_plan(d, *SPECS[s]) if s in SPECS else np.zeros(len(d), dtype=np.int64))
-            for s, d in panel.items()}
+    return {s: (_plan(d)[0] if s == SYM else np.zeros(len(d), dtype=np.int64)) for s, d in panel.items()}
 
 
 def entry_risk(panel):
-    return {s: np.full(len(d), float(PARAMS["stop_dollars"]) if s in SPECS else 0.0)
-            for s, d in panel.items()}
+    return {s: (_plan(d)[1] if s == SYM else np.zeros(len(d))) for s, d in panel.items()}
