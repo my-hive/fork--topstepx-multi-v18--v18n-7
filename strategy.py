@@ -1,6 +1,6 @@
 """Exp143: synchronized ES/NQ opening shock overextends; MNQ reverts. Falsifier PnL/era <=0."""
 import numpy as np
-FAMILY='index-micro-nasdaq-crossconfirm-opening-reversal'
+FAMILY='index-micro-nasdaq-crossconfirm-opening-continuation'
 PARAMS={'open_ct_sec':30600,'entry_ct_sec':32400,'exit_ct_sec':39600,'risk_dollars':250}
 def entry_risk(p):return{s:np.full(len(d),250.,dtype=float)for s,d in p.items()}
 def signals(p):
@@ -15,5 +15,5 @@ def signals(p):
  d=p['MNQ'];t=d.ct_sec.to_numpy()
  for x,g in d.groupby('session',sort=False).indices.items():
   z=q.get(x,{})
-  if z.get('MES',0) and z.get('MES')==z.get('MNQ',0):a['MNQ'][g[(t[g]>=32400)&(t[g]<39600)]]=-z['MNQ']
+  if z.get('MES',0) and z.get('MES')==z.get('MNQ',0):a['MNQ'][g[(t[g]>=32400)&(t[g]<39600)]]=z['MNQ']
  return a
