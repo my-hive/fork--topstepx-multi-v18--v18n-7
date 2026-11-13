@@ -1,13 +1,11 @@
-"""Rates exp 3: 2s30s curve steepener relative value, 2x ZT vs 1x ZB same direction.
-Mechanism: ZT and ZB share rate factor; trading their spread targets curve moves
-instead of outright duration. Signal = lagged 5-minute spread change extended 1h.
-Falsifier: nonpositive stressed PnL or era blocks on the paired ZT/ZB position.
+"""Rates experiment 1: prior-session ZN trend continuation at US cash open.
+Mechanism: overnight bond repricing persists into scheduled US cash liquidity.
+Falsifier: stressed PnL and cross-era blocks fail to stay positive.
 """
 import numpy as np
-import pandas as pd
 
-FAMILY = "rates-curve-steepener-relative-value"
-PARAMS = {"entry_ct_sec": 36000, "exit_ct_sec": 50400, "risk_dollars": 250}
+FAMILY = "rates-prior-session-trend-cash-open"
+PARAMS = {"entry_ct_sec": 30600, "exit_ct_sec": 34200, "risk_dollars": 250}
 
 
 def entry_risk(panel):
@@ -16,17 +14,19 @@ def entry_risk(panel):
 
 def signals(panel):
     result = {}
-    if "ZT" not in panel or "ZB" not in panel:
-        return {s: np.zeros(len(df), dtype=np.int64) for s, df in panel.items()}
-    df = panel["ZT"]
-    merged = pd.concat({"ZT": panel["ZT"].close, "ZB": panel["ZB"].close}, axis=1).dropna()
-    spread = merged["ZT"] - merged["ZB"]
-    mom = spread - spread.shift(5)
-    sign = pd.Series(np.sign(mom), index=merged.index)
-    sec = panel["ZT"].ct_sec.to_numpy()
-    active = (sec >= PARAMS["entry_ct_sec"]) & (sec < PARAMS["exit_ct_sec"])
-    zt_sig = np.where(active, np.sign(sign.reindex(panel["ZT"].index, method="ffill").fillna(0).to_numpy()), 0).astype(int)
-    zb_sig = zt_sig.copy()
-    result["ZT"] = zt_sig * 2
-    result["ZB"] = zb_sig
+    for symbol, df in panel.items():
+        out = np.zeros(len(df), dtype=np.int64)
+        if symbol != "ZN":
+            result[symbol] = out
+            continue
+        groups = list(df.groupby("session", sort=False).indices.values())
+        closes = df.close.to_numpy()
+        sec = df.ct_sec.to_numpy()
+        for g in range(2, len(groups)):
+            prev, prior, idx = groups[g - 1], groups[g - 2], groups[g]
+            side = int(np.sign(closes[prev[-1]] - closes[prior[-1]]))
+            if side:
+                active = idx[(sec[idx] >= PARAMS["entry_ct_sec"]) & (sec[idx] < PARAMS["exit_ct_sec"])]
+                out[active] = side
+        result[symbol] = out
     return result
