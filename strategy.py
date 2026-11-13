@@ -4,14 +4,14 @@ price reverts toward strikes after opening auction. Third Friday known calendar.
 Falsifier: stressed PnL <=0 or any era PnL <=0.
 """
 import numpy as np,pandas as pd
-FAMILY='index-monthly-options-gamma-pin-reversion'
+FAMILY='metals-gold-monthly-options-gamma-pin-reversion'
 PARAMS={'open_ct_sec':30600,'entry_ct_sec':32400,'exit_ct_sec':39600,'risk_dollars':250}
 def entry_risk(p):return{s:np.full(len(d),250.,dtype=float)for s,d in p.items()}
 def signals(p):
  a={}
  for s,d in p.items():
   o=np.zeros(len(d),dtype=np.int64)
-  if s=='ES':
+  if s=='GC':
    c,t=d.close.to_numpy(),d.ct_sec.to_numpy();dt=pd.to_datetime(d.session.astype(str).str[:10]);expiry=((dt.dt.weekday==4)&dt.dt.day.between(15,21)).to_numpy()
    for g in d.groupby('session',sort=False).indices.values():
     x=g[t[g]==30600];y=g[t[g]==32400]
