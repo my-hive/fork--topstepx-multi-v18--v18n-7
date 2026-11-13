@@ -1,42 +1,40 @@
-"""v18n-7 independent causal audit of CL month-boundary hedging continuation.
-Prior five completed session return, first/last three weekday business dates,
-08:00-12:00 CT. One CL, completed-bar $250 stop (not guaranteed fill loss cap).
+"""v18n-2 experiment 9. Post-seed pivot.
+FAMILY: gold_month_end_rebalance_long
+Mechanism: month-end portfolio rebalancing and commodity-index roll demand creates
+systematic gold buying near calendar month-end, distinct from intraday technical families.
+Hypothesis: long GC from 17:00 CT on final two calendar trading sessions through 15:00 CT,
+with a $250 completed-bar stop. No threshold fitted to returns.
+Falsification: stressed PnL/any era negative or <70% positive years.
 """
 import numpy as np
 import pandas as pd
-FAMILY = "energy-crude-turn-of-month-causal-independent-audit"
-PARAMS = {"trend_sessions": 5, "boundary_business_days": 3,
-          "entry_sec": 28800, "exit_sec": 43200, "stop_dollars": 250}
+
+FAMILY = "gold_month_end_rebalance_long"
+PARAMS = {"days_from_month_end": 2, "exit_sec": 54000, "stop_dollars": 250}
+GC_PV = 100.0
+
 
 def signals(panel):
-    ans = {s: np.zeros(len(d), dtype=np.int64) for s, d in panel.items()}
-    if "CL" not in panel:
-        return ans
-    d = panel["CL"]
-    labels = d.session.astype(str)
-    last = d.close.groupby(labels, sort=False).last()
-    # Shift before mapping: no current-session closing value in any signal.
-    sides = np.sign(last.shift(1) - last.shift(1 + PARAMS["trend_sessions"]))
-    c, sec = d.close.to_numpy(), d.ct_sec.to_numpy()
-    for label, ix in d.groupby(labels, sort=False).indices.items():
-        date = pd.Timestamp(label).normalize()
-        first = date.replace(day=1)
-        end = first + pd.offsets.MonthEnd(0)
-        grid = pd.bdate_range(first, end)
-        chosen = date in grid[:PARAMS["boundary_business_days"]] or date in grid[-PARAMS["boundary_business_days"]:]
-        side = sides.get(label, np.nan)
-        if not chosen or not np.isfinite(side) or side == 0:
-            continue
-        hit = ix[(sec[ix] >= PARAMS["entry_sec"]) & (sec[ix] < PARAMS["exit_sec"])]
-        if not len(hit):
-            continue
-        ref = c[hit[0]]
-        for i in hit:
-            if side * (c[i] - ref) * 1000 <= -PARAMS["stop_dollars"]:
-                break
-            ans["CL"][i] = int(side)
+    ans = {}
+    for sym, df in panel.items():
+        out = np.zeros(len(df), dtype=np.int64)
+        if sym == "GC":
+            close, sec = df.close.to_numpy(), df.ct_sec.to_numpy()
+            # Calendar rule declared ex ante; weekends/holidays naturally do not trade.
+            dates = pd.to_datetime(df.session)
+            selected = (dates.dt.day > dates.dt.days_in_month - PARAMS["days_from_month_end"]).to_numpy()
+            for idx in df.groupby("session", sort=False).indices.values():
+                if not selected[idx[0]]:
+                    continue
+                ref = close[idx[0]]
+                for i in idx[1:]:
+                    if sec[i] >= PARAMS["exit_sec"] or close[i] - ref <= -PARAMS["stop_dollars"] / GC_PV:
+                        break
+                    out[i] = 1
+        ans[sym] = out
     return ans
 
+
 def entry_risk(panel):
-    return {s: np.full(len(d), PARAMS["stop_dollars"] if s == "CL" else 0., dtype=float)
+    return {s: np.full(len(d), PARAMS["stop_dollars"] if s == "GC" else 0.0)
             for s, d in panel.items()}
